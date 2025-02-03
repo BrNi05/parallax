@@ -1,8 +1,8 @@
 # Parallax Technical Analysis Package
 
-A 2+1 component technical analysis tool collection.<br />
+A 2+1 component technical analysis tool collection for traders.<br />
 It consits of Parallax Main (PX) and Parallax Extension (PX-E) open-source scripts, and the TradingView built-in Volume indicator as a basic extension.<br />
-Written in PineScript, and can be used on TradingView. Just copy and paste the code, and add the Volume indicator from the built-in library.<br />
+Written in PineScript, and can be used on TradingView. Just copy and paste the codes, and add the Volume indicator from the built-in library.<br />
 
 ## Parallax Main Functions
 
@@ -32,18 +32,19 @@ Written in PineScript, and can be used on TradingView. Just copy and paste the c
 
 ## Technical details
 
-- The purpose of the collection is to let every TradingView user to access quality and sufficient TA. TradingView limits the number of indicators that can be applied to one chart. This is a solution.
-- The main module is - of course - overlay styled, while the extension is not.
-- The main script is not converted to be compatible with the latest version of PineScript due to plotting issues, it runs on v5.
+- The purpose of the collection is to let every TradingView user access quality and easy-to-use TA tools. TradingView limits the number of indicators that can be applied to one chart. This is a solution.
+- The main module is - of course - overlay-styled, while the extension is not.
+- The main script is not converted to be compatible with the latest version of PineScript due to plotting issues, as for now, it runs on v5.
 - The extension script runs on PineScript v6.
 - Functions that are specific to certain instruments and timeframes are automatically blocked on others.
+- Inputs (like lookback, sensitivity, etc) are clamped both mathematically and logically.
 
-## Shout-out
+## Shout-outs
 
-As this is a collection, some code is not mine but has been modified by me to achieve the desired results. <br />
-Credits for the TradingView users for the original code:
+As this is a collection, some code is not mine, but has been modified by me to achieve the desired results. <br />
+Credits for the TradingView users for the original codes:
 - Log Regression Band: @memotyka9009 and @Quantadelic
-- Gaussian Channel: @DonovanWall, @e2e4mfck
+- Gaussian Channel: @DonovanWall and @e2e4mfck
 - ADX-DI: @BeikabuOyaji
 - MACD: @ChrisMoody
 - BTC Hash Ribbons: @capriole_charles
