@@ -1,0 +1,207 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © SzoBar
+
+//@version=6
+indicator("Parallax Extension", shorttitle = "PX-E", overlay = false)
+
+// Inputs ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+visRSI = input.bool(title = "RSI", defval = true, group = "Momentum & Trends", tooltip = "Yellow line")
+rsiLookback = input.int(title = "Lookback", defval = 14, minval = 7, maxval = 50, group = "Momentum & Trends", tooltip = "The lower the lookback, the more sensitive the RSI is to recent price action. Try values: 7, 14, 21.")
+
+visSRSI = input.bool(title = "Stochastic RSI", defval = true, group = "Momentum & Trends", tooltip = "Blue and red lines")
+srsiLookbackLong = input.int(title = "Lookback Long", defval = 14, minval = 7, maxval = 50, group = "Momentum & Trends", tooltip = "The lower the lookback, the more sensitive the SRSI is. Try values: 7, 14, 21.")
+srsiLookbackShort = input.int(title = "Lookback Short", defval = 3, minval = 2, maxval = 50, group = "Momentum & Trends", tooltip = "The lower the lookback, the more sensitive the SRSI is. Try values: 2, 3, 7.")
+
+visADX = input.bool(title = "ADX DI-based BUY/SELL indicator", defval = true, group = "Momentum & Trends", tooltip = "BUY/SELL signals are marked with directional green/red triangles.")
+adxLen = input.int(title = "Lookback", defval = 7, minval = 4, maxval = 14, group = "Momentum & Trends", tooltip = "Sensitivity: the lower the lookback, the higher. Try values: 4, 7, 14.")
+
+visMACD = input.bool(title ="MACD", defval = true, group = "Momentum & Trends", tooltip = "WARNING! For scaling purposes, the script uses values during the MACD calculations, that are changing from timeframe to timeframe. The MACD itself is calculated correctly, but the looks of it will change over time.")
+
+visRL = input.bool(title = "Range Lerp", defval = false, group = "Range Analysis", tooltip = "Shows the normalized (basically relative) price action based on the lookback period.")
+RLLookback = input.int(title = "Lookback", defval = 100, minval = 5, maxval = 2000, group = "Range Analysis")
+visLogBSMB_ratio = input.bool(title = "Log(PA / 20W SMA)", defval = true, group = "Range Analysis", tooltip = "Available on Daily and Weekly charts. Shows how high above the price is from the 20W SMA.")
+visEMAdist = input.bool(title = "EMA 21-99 distance", defval = false, group = "Range Analysis", tooltip = "Shows the rationalized distance between the 21 and 99 EMA.")
+visEMAarea = input.bool(title = "EMA 21-99 Integral", defval = false, group = "Range Analysis", tooltip = "Shows the cummulative, rationalized 'area' between the 21 and 99 EMA.")
+visBbandDist = input.bool(title = "Bollinger Bands Low-High Distance", defval = false, group = "Range Analysis", tooltip = "The higher, the more heated the market is according to the Bollinger Bands.")
+
+visHashRibbons = input.bool(title = "BTC Hash Ribbons Markers (BTC, Daily)", defval = true, group = "Bitcoin Hash Ribbons", tooltip = "BUY/SELL signals are marked with green/red circles.")
+visHasRibbonsMovAvgs = input.bool(title = "BTC Hash Ribbons MA-s (BTC, Daily)", defval = false, group = "Bitcoin Hash Ribbons")
+
+
+// Current ticker and timeframe related ---------------------------------------------------------------------------------------------------------------------------------------------------
+
+var res = timeframe.period
+var isDaily = timeframe.isdaily
+var isBTC = syminfo.ticker(syminfo.tickerid) == "BTCUSD" or syminfo.ticker(syminfo.tickerid) == "BTCUSDT"
+
+
+// Calculations --------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+rsiValue = ta.rsi(close, rsiLookback)
+k = ta.sma(ta.stoch(rsiValue, rsiValue, rsiValue, srsiLookbackLong), srsiLookbackShort)
+d = ta.sma(k, srsiLookbackShort)
+
+sma20 = ta.sma(close, timeframe.isdaily ? 140 : 20) // W: 20, D: 140
+price_sma20_div = close / sma20
+log_price_sma20_div = math.log(close / sma20) * 100
+
+
+// EMA21-99 distance and integration
+
+ema21 = ta.ema(close, 21)
+ema99 = ta.ema(close, 99)
+emaDiff = math.abs(ema21 - ema99)
+emaDiffRationalized = emaDiff / ((ema21 + ema99) / 2) * 200 // The distance would get bigger and bigger as prices go up, therefore some normalization is needed.
+
+cross_up = ema21[1] < ema99[1] and ema21 > ema99
+cross_down = ema21[1] > ema99[1] and ema21 < ema99
+
+var float cumulative_distance = na
+if cross_up or cross_down
+    cumulative_distance := 0
+else
+    cumulative_distance := cumulative_distance[1] + emaDiffRationalized
+//
+
+// Williams R% (Range Lerp)
+
+RL = (close - ta.lowest(close, RLLookback)) / (ta.highest(close, RLLookback) - ta.lowest(close, RLLookback)) * 100
+
+
+// MACD (by @ChrisMoody, edited and converted to v5, v6 by me)
+
+fastMA = ta.ema(close, 12)
+slowMA = ta.ema(close, 26)
+macd = fastMA - slowMA
+signal = ta.sma(macd, 9)
+hist = macd - signal
+
+ratio = (ta.lowest(open, 100) + ta.highest(open, 100)) // Scaling, so that the MACD signal can be used together with the (S)RSI on the same chart without readability issues.
+outMacD = request.security(syminfo.tickerid, res, macd) / ratio * 800
+outSignal = request.security(syminfo.tickerid, res, signal) / ratio * 800
+outHist = request.security(syminfo.tickerid, res, hist)
+outHist_disp = outHist / ((ta.highest(outHist, 500)) / 30)
+
+histA_IsUp = outHist > outHist[1] and outHist > 0
+histA_IsDown = outHist < outHist[1] and outHist > 0
+histB_IsDown = outHist < outHist[1] and outHist <= 0
+histB_IsUp = outHist > outHist[1] and outHist <= 0
+macd_IsAbove = outMacD >= outSignal
+macd_IsBelow = outMacD < outSignal
+
+
+// BTC HASH RIBBONS (@capriole_charles), modified by me
+
+live_HR_short = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 30), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+live_HR_long = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 60), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on) 
+hist_HR_short = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 30), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
+hist_HR_long = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 60), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
+
+daily_s10 = request.security(syminfo.tickerid, "D", ta.sma(close, 10), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
+daily_s20 = request.security(syminfo.tickerid, "D", ta.sma(close, 20), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
+
+is_newbar(res) =>
+    t = time(res)
+    ta.change(t) != 0 ? true : false
+
+since_new_bar = ta.barssince(is_newbar(res))
+D_total_bars = int(na)
+D_total_bars := since_new_bar == 0 ? since_new_bar[1] : D_total_bars[1] 
+
+HR_short = float(na)
+HR_long = float(na)
+s10 = float(na) 
+s20 = float(na)
+
+HR_short := barstate.isrealtime ? live_HR_short : hist_HR_short 
+HR_long := barstate.isrealtime ? live_HR_long : hist_HR_long 
+
+s10 := barstate.isrealtime ? (since_new_bar == D_total_bars ? daily_s10 : s10[1]) : daily_s10
+s20 := barstate.isrealtime ? (since_new_bar == D_total_bars ? daily_s20 : s20[1]) : daily_s20
+
+capitulation = ta.crossunder(HR_short,HR_long)
+recovered = ta.crossover(HR_short,HR_long)
+
+buy = false
+buy := (
+     (ta.crossover(s10,s20) and ta.barssince(recovered) < ta.barssince(ta.crossunder(s10,s20)) and ta.barssince(recovered) < ta.barssince(capitulation)) 
+     or 
+     (s10>s20 and ta.crossover(HR_short,HR_long))
+     )
+     
+buy_plot = buy
+
+
+// ADX DI (@BeikabuOyaji, edited, simplified and converted to v5 by me)
+
+TrueRange = math.max(math.max(high - low, math.abs(high - nz(close[1]))), math.abs(low - nz(close[1])))
+DirectionalMovementPlus = high - nz(high[1]) > nz(low[1]) - low ? math.max(high - nz(high[1]), 0) : 0
+DirectionalMovementMinus = nz(low[1]) - low > high - nz(high[1]) ? math.max(nz(low[1]) - low, 0): 0
+
+SmoothedTrueRange = 0.0
+SmoothedTrueRange := nz(SmoothedTrueRange[1]) - (nz(SmoothedTrueRange[1])/adxLen) + TrueRange
+
+SmoothedDirectionalMovementPlus = 0.0
+SmoothedDirectionalMovementPlus := nz(SmoothedDirectionalMovementPlus[1]) - (nz(SmoothedDirectionalMovementPlus[1])/adxLen) + DirectionalMovementPlus
+
+SmoothedDirectionalMovementMinus = 0.0
+SmoothedDirectionalMovementMinus := nz(SmoothedDirectionalMovementMinus[1]) - (nz(SmoothedDirectionalMovementMinus[1])/adxLen) + DirectionalMovementMinus
+
+DIPlus = SmoothedDirectionalMovementPlus / SmoothedTrueRange * 100 * 1.4
+DIMinus = SmoothedDirectionalMovementMinus / SmoothedTrueRange * 100 * 1.4
+
+adxBear = ta.crossover(DIMinus, DIPlus)
+adxBull = ta.crossover(DIPlus, DIMinus)
+
+
+// Bollinger Bands Dist
+
+bollingerMA = ta.sma(close, 20)
+bollingerStdev = ta.stdev(bollingerMA, 20) * 1.5
+bollingerHigh = bollingerMA + bollingerStdev
+bollingerLow = bollingerMA - bollingerStdev
+bbDist = math.abs(bollingerHigh - bollingerLow)
+bbDistRationalized = bbDist / bollingerMA * 300
+
+
+// Visualization ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+plot(visRSI ? rsiValue : na, title = "RSI", color = color.yellow)
+plot(visSRSI ? k : na, title = "SRSI_K", color = color.blue)
+plot(visSRSI ? d : na, title = "SRSI_D Color", color = color.red)
+
+band1 = hline(visSRSI or visRSI ? 20 : na, title = "Primary Band Low", linestyle = hline.style_dashed, color = color.purple)
+band2 = hline(visSRSI or visRSI ? 80 : na, title = "Primary Band High", linestyle = hline.style_dashed, color = color.purple)
+fill(band1, band2, color = color.new(color.purple, 85), title = "Primary Band Fill")
+band3 = hline(visSRSI or visRSI ? 30 : na, title = "Secondary Band Low", linestyle = hline.style_dashed, color = color.purple)
+band4 = hline(visSRSI or visRSI ? 70 : na, title = "Secondary Band High", linestyle = hline.style_dashed, color = color.purple)
+fill(band3, band4, color = color.new(color.purple, 85), title = "Secondary Band Fill")
+
+plot(visLogBSMB_ratio and (timeframe.isdaily or timeframe.isweekly) ? log_price_sma20_div + 50 : na, title = "Log(Pa/20W SMA)", color = color.green)
+hline(visLogBSMB_ratio ? 50 : na, title = "Zero level", color = color.white)
+
+plot_color = true ? histA_IsUp ? color.aqua : histA_IsDown ? color.blue : histB_IsDown ? color.red : histB_IsUp ? color.maroon : color.yellow : color.gray
+macd_color = true ? macd_IsAbove ? color.lime : color.red : color.red
+signal_color = true ? macd_IsAbove ? color.yellow : color.yellow : color.lime
+plot(visMACD and outMacD != 0 ? outMacD : na, title = "MACD", color = macd_color, linewidth = 2)
+plot(visMACD and outSignal != 0 ? outSignal : na, title="Signal Line", color = signal_color, linewidth = 2, style = plot.style_line)
+plot(visMACD and outHist != 0 ? outHist_disp : na, title = "Histogram", color = color.new(plot_color, 20), linewidth = 2, style = plot.style_histogram)
+plot(visMACD and ta.cross(outMacD, outSignal) ? outSignal : na, title = "Cross", style = plot.style_circles, linewidth = 2, color = macd_color)
+
+p1 = plot(visHashRibbons and isBTC and visHasRibbonsMovAvgs ? HR_long : na, color = color.gray, linewidth = 2, style = plot.style_line,title ='HR SMA Long') 
+p2 = plot(visHashRibbons and isBTC and visHasRibbonsMovAvgs ? HR_short : na, color = (HR_short < HR_long ? color.red : color.lime), linewidth = 2, style = plot.style_line, title = 'HR SMA Short')
+fill(p1, p2, color = (HR_short < HR_long ? color.new(color.red, 30) : na))
+
+plotshape(visHashRibbons and isBTC and isDaily and capitulation, style = shape.circle, location = location.top, color = color.red, size = size.tiny, title = 'Capitulation') 
+plotshape(visHashRibbons and isBTC and isDaily and buy_plot, style = shape.circle, location = location.top, color = color.green, size = size.tiny, title = 'Buy')
+
+plotshape(visADX and adxBear, style = shape.triangledown, location = location.top, color = color.red, size = size.tiny, title = "ADX Sell")
+plotshape(visADX and adxBull, style = shape.triangleup, location = location.top, color = color.green, size = size.tiny, title = "ADX Buy")
+
+plot(visRL ? RL : na, title = "Range Lerp", color = color.white, linewidth = 1)
+
+plot(visEMAarea ? cumulative_distance / 100 : na, title = "EMA 21-99 area / price", color = ema21 >= ema99 ? color.green : color.red, style=plot.style_histogram)
+plot(visEMAdist ? emaDiffRationalized : na, title = "EMA 21-99 distance / price", color = ema21 >= ema99 ? color.blue : color.purple)
+
+plot(visBbandDist ? bbDistRationalized : na, title = "Bollinger Low-High Distance", color = color.aqua, linewidth = 2, style = plot.style_line)
