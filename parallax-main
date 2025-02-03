@@ -1,0 +1,308 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © SzoBar
+
+//@version=5
+indicator("Parallax Main", shorttitle = "PX", overlay = true)
+
+// Inputs --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+visLRB = input.bool(title = "Log Regression Band (BTC, Weekly)", defval = true, group = "Bitcoin Logarithmic Growth/Regression Bands")
+visLRBEXT = input.bool(title = "Curve Projections", defval = true, group = "Bitcoin Logarithmic Growth/Regression Bands")
+
+visBMSB = input.bool(title = "Bull Market Support Band (Weekly)", defval = true, group = "Supports/Resistaces", tooltip = "Purple band")
+visGR = input.bool(title = "EMA350 Multiplier", defval = false, group = "Supports/Resistaces", tooltip = "Multiplies the 350X EMA with the elements of the Fib-series, showing important resistance/support zones. Purple bands.")
+visBollinger = input.bool(title = "Bollinger Bands", defval = false, group = "Supports/Resistaces")
+visFR = input.bool(title = "Adaptive Fibonacci Retracement", defval = false, group = "Supports/Resistaces", tooltip = "Fib-retracement based on the lookback results and mix/max values.")
+FRLookback = input.int(title = "Fibonacci Retracement Lookback Period", defval = 100, minval = 7, maxval = 4000, group = "Supports/Resistaces", tooltip = "Try analysing different lookback periods. It is good if the lookback time window includes a bear and a bull market as well.")
+visMBLine = input.bool(title = "Bottom Band", defval = true, group = "Supports/Resistaces", tooltip = "Mostly used for BTC, but similar behaviour can ben observed on other charts as well.")
+visPI_MA = input.bool(title = "PI Cycle Top MAs (BTC, Daily)", defval = true, group = "Supports/Resistaces", tooltip = "Generally important MAs on other charts as well. In case they cross, it marks the BTC top for that cycle.")
+
+visGC = input.bool(title = "Gaussian Channel", defval = false, group = "Gaussian Channel")
+modeFast = input.bool(title = "Fast Mode", defval = false, group = "Gaussian Channel", tooltip = "More sensitive to recent changes.")
+modeLag = input.bool(title = "Lag Mode", defval = false, group = "Gaussian Channel", tooltip = "Less sensitive to recent changes.")
+
+visGDMarks = input.bool(title = "Golden/Death Cross Markers", defval = true, group = "MAs", tooltip = "Display circles/diamonds above the bars to alert about an approaching cross. Displays an X to alert about a cross that has happened.")
+GDMarksSensitivity = input.float(title = "Golden/Death Cross Detection Sensitivity", defval = 1.02, minval = 1, maxval = 1.5, group = "MAS", tooltip = "The lower, the less warning signals. In more volatile markets, a higher value might be better, to catch market edges.")
+visEMA3 = input.bool(title = "13X EMA", defval = false, group = "MAs")
+visEMA4 = input.bool(title = "21X EMA", defval = true, group = "MAs", tooltip = "Use the 21 and 99 EMA together. Look at historical data and analyse what happens at crosses.")
+visEMA5 = input.bool(title = "50X EMA", defval = false, group = "MAs")
+visEMA6 = input.bool(title = "99X EMA", defval = true, group = "MAs", tooltip = "Use the 21 and 99 EMA together. Look at historical data and analyse what happens at crosses.")
+visEMA7 = input.bool(title = "200X EMA", defval = false, group = "MAs")
+visEMA8 = input.bool(title = "350X EMA", defval = false, group = "MAs")
+visSMA0 = input.bool(title = "20X SMA", defval = false, group = "MAs")
+visSMA1 = input.bool(title = "50X SMA (G/D-UPPER)", defval = false, group = "MAs")
+visSMA3 = input.bool(title = "100X SMA", defval = false, group = "MAs")
+visSMA4 = input.bool(title = "110X SMA", defval = false, group = "MAs")
+visSMA2 = input.bool(title = "200X SMA (G/D-LOWER)", defval = false, group = "MAs")
+visSMA5 = input.bool(title = "300X SMA", defval = false, group = "MAs")
+
+
+// Calculations --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+var isBTC = syminfo.ticker(syminfo.tickerid) == "BTCUSD" or syminfo.ticker(syminfo.tickerid) == "BTCUSDT"
+var BTCINDEX = syminfo.prefix(syminfo.tickerid) == "INDEX" and isBTC
+var timeframe = timeframe.period
+var isDaily = timeframe == "D"
+var isWeekly = timeframe == "W"
+
+
+// EMAs, SMAs
+
+sma20 = ta.sma(close, 20)
+ema21 = ta.ema(close, 21)
+
+EMA3 = ta.ema(close, 13)
+EMA4 = ta.ema(close, 21)
+EMA5 = ta.ema(close, 50)
+EMA6 = ta.ema(close, 99)
+EMA7 = ta.ema(close, 200)
+EMA8 = ta.ema(close, 350)
+
+SMA0 = ta.sma(close, 20)
+SMA1 = ta.sma(close, 50)
+SMA2 = ta.sma(close, 200)
+SMA3 = ta.sma(close, 100)
+SMA4 = ta.sma(close, 110)
+SMA5 = ta.sma(close, 300)
+
+
+// Golden/Death Cross Tracker
+
+smaGreater = SMA1 > SMA2 ? SMA1 : SMA2
+smaSmaller = SMA1 < SMA2 ? SMA1 : SMA2
+crossImminent = smaSmaller * 1.006 * GDMarksSensitivity >= smaGreater
+crossApproaching = smaSmaller * 1.03 * GDMarksSensitivity >= smaGreater and crossImminent == false
+crossConfirmed = ta.crossover(SMA1, SMA2) or ta.crossover(SMA2, SMA1)
+if crossConfirmed
+    crossApproaching := false
+    crossImminent := false
+//
+
+// Advanced Supports/Resistaces (350XEMA, Bollinger, Fibonacci Retracement)
+
+X350Mult = ta.sma(close, 350)
+
+bollingerMA = ta.sma(close, 20)
+bollingerStdev = ta.stdev(bollingerMA, 20) * 1.5
+bollingerHigh = bollingerMA + bollingerStdev
+bollingerLow = bollingerMA - bollingerStdev
+
+FIB_L = ta.lowest(FRLookback)
+FIB_H = ta.highest(FRLookback)
+FIB_delta = FIB_H - FIB_L
+FIB1 = FIB_L + FIB_delta * 0.234
+FIB2 = FIB_L + FIB_delta * 0.382
+FIB3 = FIB_L + FIB_delta * 0.5
+FIB4 = FIB_L + FIB_delta * 0.618
+FIB5 = FIB_L + FIB_delta * 0.786
+
+
+// Market Edges - PI Cycle, Market Bottom
+
+maLong = ta.sma(close, 350) * 2
+maShort = ta.sma(close, 111)
+PiCycleTop = ta.crossunder(maLong, maShort) ? close + (close / 100 * 10) : na
+
+MB1 = ta.sma(close, isDaily ? 1400 : 200)
+MB2 = ta.sma(close, isDaily ? 2100 : 300)
+
+
+// Log Growth Curve (some parts of the code) by @Quantadelic aka Pinescript Pleb aka Stealer of Alpha & Destroyer of Discords and Log Regression Band (@memotyka9009) (edited, merged and converted to v5 by me)
+
+TimeIndex =     time < 1279670400000 ? 3.0 : (time - 1279670400000) / 86400000
+Weight =        (math.log10(TimeIndex + 10) * TimeIndex * TimeIndex - TimeIndex) / 30000
+TimeDelta =     time - time[1]
+
+HighSlopeCum =  0.00076 * TimeIndex
+HighLogDev =    TimeIndex > 2 ? math.log(Weight) + 1.06930947 + HighSlopeCum : na
+LowSlopeCum =   0.001329 * TimeIndex
+LowLogDev =     TimeIndex > 2 ? math.log(Weight) - 3.0269716 + LowSlopeCum : na
+LogRange =      HighLogDev - LowLogDev
+
+Fib9098Calc =   (LogRange * 0.9098) + LowLogDev
+Fib8541Calc =   (LogRange * 0.8541) + LowLogDev
+Fib7639Calc =   (LogRange * 0.7639) + LowLogDev
+Fib618Calc =    (LogRange * 0.618) + LowLogDev
+MidCalc =       (LogRange * 0.5) + LowLogDev
+Fib382Calc =    (LogRange * 0.382) + LowLogDev
+Fib2361Calc =   (LogRange * 0.2361) + LowLogDev
+Fib1459Calc =   (LogRange * 0.1459) + LowLogDev
+Fib0902Calc =   (LogRange * 0.0902) + LowLogDev
+
+HighDev =       math.pow(2.718281828459, HighLogDev)
+Fib9098Dev =    math.pow(2.718281828459, Fib9098Calc)
+Fib8541Dev =    math.pow(2.718281828459, Fib8541Calc)
+Fib7639Dev =    math.pow(2.718281828459, Fib7639Calc)
+Fib618Dev =     math.pow(2.718281828459, Fib618Calc)
+MidDev =        math.pow(2.718281828459, MidCalc)
+Fib382Dev =     math.pow(2.718281828459, Fib382Calc)
+Fib2361Dev =    math.pow(2.718281828459, Fib2361Calc)
+Fib1459Dev =    math.pow(2.718281828459, Fib1459Calc)
+Fib0902Dev =    math.pow(2.718281828459, Fib0902Calc)
+LowDev =        math.pow(2.718281828459, LowLogDev)
+
+ForLoopStep = timeframe.ismonthly == true ? math.ceil( 12 / timeframe.multiplier) : 
+              timeframe.isweekly == true ? math.ceil(26 / timeframe.multiplier) : 
+              timeframe.isdaily == true ? math.ceil(91 / timeframe.multiplier) : 
+              (timeframe.isminutes == true) and (timeframe.multiplier > 59) ? math.ceil(10080 / timeframe.multiplier) : na
+ForLoopMax =    na(ForLoopStep) ? na : ForLoopStep * 13
+
+MidSlope =      (0.00076 + 0.001329) * 0.5
+MidIntercept =  (1.06930947 - 3.0269716) * 0.5
+
+x = bar_index
+
+lower1 = math.exp((-17.597 - 1.5 * 0.136) + 4.191 * math.log(x))
+lower  = math.exp(-17.4597 + 4.191 * math.log(x))
+lower2 = math.exp((-17.597+3 * 0.136) + 4.191 * math.log(x))
+upper1 = math.exp((-9.4829-1.2 * 0.275348) + 3.1838 * math.log(x))
+upper = math.exp(-9.4829 + 3.1838 * math.log(x))
+upper2 = math.exp((-9.4829 + 1.2 * 0.275348) + 3.1838 * math.log(x))
+fairValue = math.exp((-17.597 + 4.191 * math.log(x)) * 0.58 + (-9.4829 + 3.1838 * math.log(x)) * 0.42)
+
+if barstate.islast and visLRB and visLRBEXT and BTCINDEX and isWeekly
+    var offset = 26
+    for i = 0 to 180 by ForLoopStep
+        line.new(time + TimeDelta * i, math.exp((-17.597 - 1.5 * 0.136) + 4.191 * math.log(x + i)), time + TimeDelta * (i + ForLoopStep), math.exp((-17.597 - 1.5 * 0.136) + 4.191 * math.log(x + i + offset)), xloc = xloc.bar_time, color = color.green, width = 1)
+        line.new(time + TimeDelta * i, math.exp(-17.4597 + 4.191 * math.log(x + i)), time + TimeDelta * (i + ForLoopStep), math.exp(-17.4597 + 4.191 * math.log(x + i + offset)), xloc = xloc.bar_time, color = color.yellow, width = 1)
+        line.new(time + TimeDelta * i, math.exp((-17.597+3 * 0.136) + 4.191 * math.log(x + i)), time + TimeDelta * (i + ForLoopStep), math.exp((-17.597+3 * 0.136) + 4.191 * math.log(x + i + offset)), xloc = xloc.bar_time, color = color.green, width = 1)
+        line.new(time + TimeDelta * i, math.exp((-17.597 + 4.191 * math.log(x + i)) * 0.58 + (-9.4829 + 3.1838 * math.log(x + i)) * 0.42), time + TimeDelta * (i + ForLoopStep), math.exp((-17.597 + 4.191 * math.log(x + i + offset)) * 0.58 + (-9.4829 + 3.1838 * math.log(x + i + 25)) * 0.42), xloc = xloc.bar_time, color = color.white, width = 1)
+        line.new(time + TimeDelta * i, math.exp((-9.4829-1.2 * 0.275348) + 3.1838 * math.log(x + i)), time + TimeDelta * (i + ForLoopStep), math.exp((-9.4829-1.2*0.275348) + 3.1838*math.log(x + i + offset)), xloc = xloc.bar_time, color = color.red, width = 1)
+        line.new(time + TimeDelta * i, math.exp(-9.4829 + 3.1838 * math.log(x + i)), time + TimeDelta * (i + ForLoopStep), math.exp(-9.4829 + 3.1838 * math.log(x + i + offset)), xloc = xloc.bar_time, color = color.purple, width = 1)
+        line.new(time + TimeDelta * i, math.exp((-9.4829 + 1.2 * 0.275348) + 3.1838 * math.log(x + i)), time + TimeDelta * (i + ForLoopStep), math.exp((-9.4829 + 1.2 * 0.275348) + 3.1838 * math.log(x + i + offset)), xloc = xloc.bar_time, color = color.red, width = 1)
+//
+    
+// Gaussian Channel by @DonovanWall and @e2e4mfck (edited and converted to v5 by me)
+
+gSrc = ohlc4, N = 4.0, per = 144, mult = 1.414 // Gaussian Channel Hardcoded Settings
+
+beta  = (1 - math.cos(4*math.asin(1)/per)) / (math.pow(1.414, 2/N) - 1)
+alpha = - beta + math.sqrt(math.pow(beta, 2) + 2*beta)
+
+lag = (per - 1)/(2*N)
+
+srcdata = modeLag ? gSrc + (gSrc - gSrc[lag]) : gSrc
+trdata  = modeLag ? ta.tr(true) + (ta.tr(true) - ta.tr(true)[lag]) : ta.tr(true)
+
+f_filt9x (_a, _s, _i) => 
+    int _m2 = 0, int _m3 = 0, int _m4 = 0, int _m5 = 0, int _m6 = 0, 
+    int _m7 = 0, int _m8 = 0, int _m9 = 0, float _f = .0, _x = (1 - _a)
+    
+    _m2 := _i == 9 ? 36  : _i == 8 ? 28 : _i == 7 ? 21 : _i == 6 ? 15 : _i == 5 ? 10 : _i == 4 ? 6 : _i == 3 ? 3 : _i == 2 ? 1 : 0
+    _m3 := _i == 9 ? 84  : _i == 8 ? 56 : _i == 7 ? 35 : _i == 6 ? 20 : _i == 5 ? 10 : _i == 4 ? 4 : _i == 3 ? 1 : 0
+    _m4 := _i == 9 ? 126 : _i == 8 ? 70 : _i == 7 ? 35 : _i == 6 ? 15 : _i == 5 ? 5  : _i == 4 ? 1 : 0
+    _m5 := _i == 9 ? 126 : _i == 8 ? 56 : _i == 7 ? 21 : _i == 6 ? 6  : _i == 5 ? 1  : 0 
+    _m6 := _i == 9 ? 84  : _i == 8 ? 28 : _i == 7 ? 7  : _i == 6 ? 1  : 0 
+    _m7 := _i == 9 ? 36  : _i == 8 ? 8  : _i == 7 ? 1  : 0
+    _m8 := _i == 9 ? 9   : _i == 8 ? 1  : 0 
+    _m9 := _i == 9 ? 1   : 0
+
+    _f :=   math.pow(_a, _i) * nz(_s) + 
+      _i  *     _x      * nz(_f[1])      - (_i >= 2 ? 
+      _m2 * math.pow(_x, 2)  * nz(_f[2]) : 0) + (_i >= 3 ? 
+      _m3 * math.pow(_x, 3)  * nz(_f[3]) : 0) - (_i >= 4 ? 
+      _m4 * math.pow(_x, 4)  * nz(_f[4]) : 0) + (_i >= 5 ? 
+      _m5 * math.pow(_x, 5)  * nz(_f[5]) : 0) - (_i >= 6 ? 
+      _m6 * math.pow(_x, 6)  * nz(_f[6]) : 0) + (_i >= 7 ? 
+      _m7 * math.pow(_x, 7)  * nz(_f[7]) : 0) - (_i >= 8 ? 
+      _m8 * math.pow(_x, 8)  * nz(_f[8]) : 0) + (_i == 9 ? 
+      _m9 * math.pow(_x, 9)  * nz(_f[9]) : 0)
+
+f_pole (_a, _s, _i) =>
+    _f1 =            f_filt9x(_a, _s, 1),      _f2 = (_i >= 2 ? f_filt9x(_a, _s, 2) : 0), _f3 = (_i >= 3 ? f_filt9x(_a, _s, 3) : 0)
+    _f4 = (_i >= 4 ? f_filt9x(_a, _s, 4) : 0), _f5 = (_i >= 5 ? f_filt9x(_a, _s, 5) : 0), _f6 = (_i >= 6 ? f_filt9x(_a, _s, 6) : 0)
+    _f7 = (_i >= 2 ? f_filt9x(_a, _s, 7) : 0), _f8 = (_i >= 8 ? f_filt9x(_a, _s, 8) : 0), _f9 = (_i == 9 ? f_filt9x(_a, _s, 9) : 0)
+    _fn = _i == 1 ? _f1 : _i == 2 ? _f2 : _i == 3 ? _f3 :
+      _i == 4     ? _f4 : _i == 5 ? _f5 : _i == 6 ? _f6 :
+      _i == 7     ? _f7 : _i == 8 ? _f8 : _i == 9 ? _f9 : na
+    [_fn, _f1]
+
+[filtn, filt1] = f_pole(alpha, srcdata, N)
+[filtntr, filt1tr] = f_pole(alpha, trdata,  N)
+
+filt   = modeFast ? (filtn + filt1)/2 : filtn
+filttr = modeFast ? (filtntr + filt1tr)/2 : filtntr
+
+hband = filt + filttr*mult
+lband = filt - filttr*mult
+
+color1 = #0aff68, color2 = #00752d, color3 = #ff0a5a, color4 = #990032
+fcolor   = filt > filt[1] ? #0aff68 : filt < filt[1] ? #ff0a5a : #cccccc
+barcolor = (gSrc > gSrc[1]) and (gSrc > filt) and (gSrc < hband) ? #0aff68 : (gSrc > gSrc[1]) and (gSrc >= hband) ? #0aff1b : (gSrc <= gSrc[1]) and (gSrc > filt) ? #00752d : 
+           (gSrc < gSrc[1]) and (gSrc < filt) and (gSrc > lband) ? #ff0a5a : (gSrc < gSrc[1]) and (gSrc <= lband) ? #ff0a11 : (gSrc >= gSrc[1]) and (gSrc < filt) ? #990032 : #cccccc
+//
+
+// Visualization -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+plot(visEMA3 ? EMA3 : na, title = "EMA_3", color = color.white, linewidth = 2)
+plot(visEMA4 ? EMA4 : na, title = "EMA_4", color = color.white, linewidth = 2)
+plot(visEMA5 ? EMA5 : na, title = "EMA_5", color = color.white, linewidth = 2)
+plot(visEMA6 ? EMA6 : na, title = "EMA_6", color = color.white, linewidth = 2)
+plot(visEMA7 ? EMA7 : na, title = "EMA_7", color = color.white, linewidth = 2)
+plot(visEMA8 ? EMA8 : na, title = "EMA_7", color = color.white, linewidth = 2)
+plot(visSMA0 or visBollinger ? SMA0 : na, title = "SMA_0", color = color.white, linewidth = 2)
+plot(visSMA1 ? SMA1 : na, title = "SMA_1", color = color.white, linewidth = 2)
+plot(visSMA3 ? SMA3 : na, title = "SMA_3", color = color.white, linewidth = 2)
+plot(visSMA2 ? SMA2 : na, title = "SMA_2", color = color.white, linewidth = 2)
+plot(visSMA4 ? SMA4 : na, title = "SMA_4", color = color.white, linewidth = 2)
+plot(visSMA5 ? SMA5 : na, title = "SMA_5", color = color.white, linewidth = 2)
+
+gdColor = SMA1 > SMA2 ? color.red : color.green
+plotshape(visGDMarks and (crossConfirmed), style = shape.xcross, location = location.top, color = SMA1 < SMA2 ? color.red : color.green, size = size.tiny, title = 'Golden/Death Cross')
+plotshape(visGDMarks and crossApproaching, style = shape.circle, location = location.top, color = gdColor, size = size.tiny, title = 'Golden/Death Cross Approaching')
+plotshape(visGDMarks and crossImminent, style = shape.diamond, location = location.top, color = gdColor, size = size.tiny, title = 'Golden/Death Cross Imminent')
+
+plot(visPI_MA and isDaily ? maLong : na, title = "350 * 2 PI MA", color = color.red, linewidth = 2)
+plot(visPI_MA and isDaily ? maShort : na, title = "111 PI MA", color = color.green, linewidth = 2)
+
+MB1_ = plot(visMBLine and (isDaily or isWeekly) ? MB1 : na, title = "MB1 Line", color = color.blue, linewidth = 2)
+MB2_ = plot(visMBLine and (isDaily or isWeekly) ? MB2 : na, title = "MB2 Line", color = color.blue, linewidth = 2)
+fill(MB1_, MB2_, color = color.new(color.yellow, 80))
+
+BSMB1 = plot(visBMSB and isWeekly ? sma20 : na, title = "20W SMA", color = color.white, linewidth = 2)
+BSMB2 = plot(visBMSB and isWeekly ? ema21 : na, title = "21W EMA", color = color.white, linewidth = 2)
+fill(BSMB1, BSMB2, color = color.new(color.purple, 40))
+
+firstPlotGR = plot(visGR ? X350Mult * 0.382 : na, title = "Golden Ratio (350D MA * 0.382)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 0.5 : na, title = "Golden Ratio (350D MA * 0.5)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 0.618 : na, title = "Golden Ratio (350D MA * 0.618)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 0.786 : na, title = "Golden Ratio (350D MA * 0.786)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult : na, title = "Golden Ratio (350D MA * 1)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 1.272 : na, title = "Golden Ratio (350D MA * 1.272)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 1.414 : na, title = "Golden Ratio (350D MA * 1.414)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 1.618 : na, title = "Golden Ratio (350D MA * 1.618)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 2 : na, title = "Golden Ratio (350D MA * 2)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 2.272 : na, title = "Golden Ratio (350D MA * 2.272)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 2.414 : na, title = "Golden Ratio (350D MA * 2.414)", color = color.purple, linewidth = 2)
+plot(visGR ? X350Mult * 2.618 : na, title = "Golden Ratio (350D MA * 2.618)", color = color.purple, linewidth = 2)
+lastPlotGR = plot(visGR ? (X350Mult * 3) : na, title = "Golden Ratio (350D MA * 3)", color = color.purple, linewidth = 2)
+fill(firstPlotGR, lastPlotGR, color = color.new(color.purple, 95))
+
+plot(visBollinger ? bollingerLow : na, color = color.green, title = "Bollinger Low", linewidth = 2)
+plot(visBollinger ? bollingerHigh : na, color = color.red, title = "Bollinger High", linewidth = 2)
+
+firstPlotFIB = plot(visFR ? FIB_L : na, color = color.rgb(255, 127, 0, 0), title = "Fibonacci  0%", linewidth = 2)
+plot(visFR ? FIB1 : na, color = color.rgb(255, 127, 0, 0), title = "Fibonacci  23.4%", linewidth = 2)
+plot(visFR ? FIB2 : na, color = color.rgb(255, 127, 0, 0), title = "Fibonacci  38.2%", linewidth = 2)
+plot(visFR ? FIB3 : na, color = color.rgb(255, 127, 0, 0), title = "Fibonacci  50%", linewidth = 2)
+plot(visFR ? FIB4 : na, color = color.rgb(255, 127, 0, 0), title = "Fibonacci  61.8%", linewidth = 2)
+plot(visFR ? FIB5 : na, color = color.rgb(255, 127, 0, 0), title = "Fibonacci  78.6%", linewidth = 2)
+lastPlotFIB = plot(visFR ? FIB_H : na, color = color.rgb(255, 127, 0, 0), title = "Fibonacci  100%", linewidth = 2)
+fill(firstPlotFIB, lastPlotFIB, color = color.rgb(255, 127, 0, 90))
+
+l1 = plot(isBTC and BTCINDEX and visLRB and isWeekly ? lower1 : na, color = color.green)
+L = plot(isBTC and BTCINDEX and visLRB and isWeekly ? lower : na, color = color.yellow)
+l2 = plot(isBTC and BTCINDEX and visLRB and isWeekly ? lower2 : na, color = color.green)
+intrinsic = plot(isBTC and BTCINDEX and visLRB and isWeekly ? fairValue : na, color = color.white)
+u1 = plot(isBTC and BTCINDEX and visLRB and isWeekly ? upper1 : na, color = color.red)
+U = plot(isBTC and BTCINDEX and visLRB and isWeekly ? upper : na, color = color.purple)
+u2 = plot(isBTC and BTCINDEX and visLRB and isWeekly ? upper2 : na, color = color.red)
+
+fill(intrinsic, l2, color = color.new(color.blue, 90))
+fill(l2, l1, color = color.new(color.green, 90))
+fill(u1, u2, color = color.new(color.red, 90))
+
+filtplot = plot(visGC ? filt : na, title = "Filter", color = fcolor, linewidth = 3)
+hbandplot = plot(visGC ? hband : na, title = "Filtered True Range High Band", color = fcolor)
+lbandplot = plot(visGC ? lband : na, title = "Filtered True Range Low Band", color = fcolor)
+fill(hbandplot, lbandplot, title = "Channel Fill", color = color.new(fcolor, 80))
