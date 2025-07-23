@@ -25,9 +25,6 @@ visEMAdist = input.bool(title = "EMA 21-99 distance", defval = false, group = "R
 visEMAarea = input.bool(title = "EMA 21-99 Integral", defval = false, group = "Range Analysis", tooltip = "Shows the cummulative, rationalized 'area' between the 21 and 99 EMA.")
 visBbandDist = input.bool(title = "Bollinger Bands Low-High Distance", defval = false, group = "Range Analysis", tooltip = "The higher, the more heated the market is according to the Bollinger Bands.")
 
-visHashRibbons = input.bool(title = "BTC Hash Ribbons Markers (BTC, Daily)", defval = true, group = "Bitcoin Hash Ribbons", tooltip = "BUY/SELL signals are marked with green/red circles.")
-visHasRibbonsMovAvgs = input.bool(title = "BTC Hash Ribbons MA-s (BTC, Daily)", defval = false, group = "Bitcoin Hash Ribbons")
-
 
 // Current ticker and timeframe related ---------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -91,48 +88,6 @@ macd_IsAbove = outMacD >= outSignal
 macd_IsBelow = outMacD < outSignal
 
 
-// BTC HASH RIBBONS (@capriole_charles), modified by me
-
-live_HR_short = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 30), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
-live_HR_long = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 60), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on) 
-hist_HR_short = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 30), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
-hist_HR_long = request.security("QUANDL:BCHAIN/HRATE", "D", ta.sma(close, 60), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
-
-daily_s10 = request.security(syminfo.tickerid, "D", ta.sma(close, 10), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
-daily_s20 = request.security(syminfo.tickerid, "D", ta.sma(close, 20), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off) 
-
-is_newbar(res) =>
-    t = time(res)
-    ta.change(t) != 0 ? true : false
-
-since_new_bar = ta.barssince(is_newbar(res))
-D_total_bars = int(na)
-D_total_bars := since_new_bar == 0 ? since_new_bar[1] : D_total_bars[1] 
-
-HR_short = float(na)
-HR_long = float(na)
-s10 = float(na) 
-s20 = float(na)
-
-HR_short := barstate.isrealtime ? live_HR_short : hist_HR_short 
-HR_long := barstate.isrealtime ? live_HR_long : hist_HR_long 
-
-s10 := barstate.isrealtime ? (since_new_bar == D_total_bars ? daily_s10 : s10[1]) : daily_s10
-s20 := barstate.isrealtime ? (since_new_bar == D_total_bars ? daily_s20 : s20[1]) : daily_s20
-
-capitulation = ta.crossunder(HR_short,HR_long)
-recovered = ta.crossover(HR_short,HR_long)
-
-buy = false
-buy := (
-     (ta.crossover(s10,s20) and ta.barssince(recovered) < ta.barssince(ta.crossunder(s10,s20)) and ta.barssince(recovered) < ta.barssince(capitulation)) 
-     or 
-     (s10>s20 and ta.crossover(HR_short,HR_long))
-     )
-     
-buy_plot = buy
-
-
 // ADX DI (@BeikabuOyaji, edited, simplified and converted to v5 by me)
 
 TrueRange = math.max(math.max(high - low, math.abs(high - nz(close[1]))), math.abs(low - nz(close[1])))
@@ -188,13 +143,6 @@ plot(visMACD and outMacD != 0 ? outMacD : na, title = "MACD", color = macd_color
 plot(visMACD and outSignal != 0 ? outSignal : na, title="Signal Line", color = signal_color, linewidth = 2, style = plot.style_line)
 plot(visMACD and outHist != 0 ? outHist_disp : na, title = "Histogram", color = color.new(plot_color, 20), linewidth = 2, style = plot.style_histogram)
 plot(visMACD and ta.cross(outMacD, outSignal) ? outSignal : na, title = "Cross", style = plot.style_circles, linewidth = 2, color = macd_color)
-
-p1 = plot(visHashRibbons and isBTC and visHasRibbonsMovAvgs ? HR_long : na, color = color.gray, linewidth = 2, style = plot.style_line,title ='HR SMA Long') 
-p2 = plot(visHashRibbons and isBTC and visHasRibbonsMovAvgs ? HR_short : na, color = (HR_short < HR_long ? color.red : color.lime), linewidth = 2, style = plot.style_line, title = 'HR SMA Short')
-fill(p1, p2, color = (HR_short < HR_long ? color.new(color.red, 30) : na))
-
-plotshape(visHashRibbons and isBTC and isDaily and capitulation, style = shape.circle, location = location.top, color = color.red, size = size.tiny, title = 'Capitulation') 
-plotshape(visHashRibbons and isBTC and isDaily and buy_plot, style = shape.circle, location = location.top, color = color.green, size = size.tiny, title = 'Buy')
 
 plotshape(visADX and adxBear, style = shape.triangledown, location = location.top, color = color.red, size = size.tiny, title = "ADX Sell")
 plotshape(visADX and adxBull, style = shape.triangleup, location = location.top, color = color.green, size = size.tiny, title = "ADX Buy")

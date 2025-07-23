@@ -28,7 +28,6 @@ Written in PineScript, therefore can only be used on TradingView. Just copy and 
 - EMA 21-99 Distance (normalized)
 - EMA 21-99 Integral (normalized area between the two MAs)
 - Bollinger Bands Low-High Distance
-- BTC Hash Ribbons
 
 ## Technical details
 
@@ -44,6 +43,7 @@ Written in PineScript, therefore can only be used on TradingView. Just copy and 
 
 As this is a collection, some code is not mine, but has been modified by me to achieve the desired results. <br />
 Credits for the TradingView users for the original codes:
+
 - Log Regression Band: @memotyka9009 and @Quantadelic (Log Growth Curves)
 - Gaussian Channel: @DonovanWall and @e2e4mfck
 - ADX-DI: @BeikabuOyaji
